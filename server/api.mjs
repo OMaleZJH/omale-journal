@@ -26,9 +26,10 @@ export function createAPI(store,env=process.env) {
       const rawToken=request.headers.get('cookie')?.split(';').map(s=>s.trim()).find(s=>s.startsWith(cookieName+'='))?.slice(cookieName.length+1);
       const session=rawToken?await store.get('sessions',digest(rawToken)):null;
       const user=session&&session.expires>Date.now()?await store.get('users',session.userId):null;
-      const requireUser=()=>{if(!user)fail(401,'请先登录，游客只能浏览公开内容。');return user;};
+      const requireUser=()=>{if(!user)fail(401,'请先登录，游客只能浏览公开内容。');if(user.banned)fail(403,'该账号已被封禁，如有疑问请联系站长。');return user;};
+      const notify=async(userId,type,content,link)=>{if(!userId)return;const id=type==='message'?`${userId}:${digest(type+link)}`:randomUUID();await store.put('notifications',id,{id,userId,type,content:`${user.name} ${content}`,link,read:false,createdAt:new Date().toISOString()});};
       const ownerOnly=()=>{requireUser();if(user.role!=='owner')fail(403,'只有 Omale 可以发布和管理文章。');};
-      const author=async item=>({...item,author:publicUser(await store.get('users',item.authorId))});
+      const author=async item=>({...item,...(item.title?{liked:user?!!await store.get('likes',`${item.status?'projects':'posts'}:${item.id}:${user.id}`):false}:{}),author:publicUser(await store.get('users',item.authorId))});
       const canReadProject=item=>item&&(item.status==='published'||item.authorId===user?.id||user?.role==='owner');
       async function login(account){const secret=token();await store.put('sessions',digest(secret),{id:digest(secret),userId:account.id,expires:Date.now()+1209600000});return json({user:{...publicUser(account),email:account.email}},200,{'Set-Cookie':cookie(secret)});}
       if(path[0]==='session'&&method==='GET')return json({user:user?{...publicUser(user),email:user.email}:null});
@@ -67,6 +68,7 @@ export function createAPI(store,env=process.env) {
             email=email.toLowerCase();
             let account=(await store.list('users',{email}))[0];
             const avatarData=ghUser.avatar_url?await downloadAvatar(ghUser.avatar_url):'';
+            if(account&&account.banned)return toLogin('该账号已被封禁，无法登录。');
             if(account) {
               if(avatarData&&!account.avatar)await store.put('users',account.id,{...account,avatar:avatarData});
               return login(account.avatar?account:{...account,avatar:avatarData});
@@ -93,6 +95,7 @@ export function createAPI(store,env=process.env) {
           const account=(await store.list('users',{email}))[0];
           if(!account){await hashPassword(password);fail(401,'邮箱或密码不正确。');}
           if(!await verifyPassword(password,account.password))fail(401,'邮箱或密码不正确。');
+          if(account.banned)fail(403,'该账号已被封禁，如有疑问请联系站长。');
           return login(account);
         }
       }
@@ -109,7 +112,7 @@ export function createAPI(store,env=process.env) {
         if(method==='DELETE'){if(!path[1])fail(400,'缺少文章标识。');await store.remove('posts',path[1]);return json({ok:true});}
         if(!['POST','PATCH'].includes(method))fail(405,'不支持的请求方法。');
         const old=path[1]?await store.get('posts',path[1]):null;if(path[1]&&!old)fail(404,'文章不存在。');
-        const post={id:old?.id||randomUUID(),title:text(body.title,'标题',100,2),summary:text(body.summary,'摘要',240,5),content:text(body.content,'正文',50000,10),category:['ai','code','systems'].includes(body.category)?body.category:'code',tags:Array.isArray(body.tags)?body.tags.slice(0,5).map(tag=>text(tag,'标签',20,1)):[],art:['ai','terminal','universe'].includes(body.art)?body.art:'universe',cover:body.cover===undefined?old?.cover||'':coverCheck(body.cover),authorId:user.id,sample:false,createdAt:old?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
+        const post={views:old?.views||0,likes:old?.likes||0,id:old?.id||randomUUID(),title:text(body.title,'标题',100,2),summary:text(body.summary,'摘要',240,5),content:text(body.content,'正文',50000,10),category:['ai','code','systems'].includes(body.category)?body.category:'code',tags:Array.isArray(body.tags)?body.tags.slice(0,5).map(tag=>text(tag,'标签',20,1)):[],art:['ai','terminal','universe'].includes(body.art)?body.art:'universe',cover:body.cover===undefined?old?.cover||'':coverCheck(body.cover),authorId:user.id,sample:false,createdAt:old?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
         await store.put('posts',post.id,post);return json(await author(post),old?200:201);
       }
       if(path[0]==='projects') {
@@ -117,11 +120,11 @@ export function createAPI(store,env=process.env) {
         requireUser();
         const old=path[1]?await store.get('projects',path[1]):null;
         if(path[1]&&!old)fail(404,'作品不存在。');
-        if(path[2]==='clone'&&method==='POST'){if(!canReadProject(old))fail(404,'作品不存在。');if(old.license==='All rights reserved')fail(403,'作者未开放克隆授权。');const copy={...old,id:randomUUID(),title:`${old.title.slice(0,80)} · 我的分支`,authorId:user.id,status:'draft',sample:false,clonedFrom:old.id,cover:old.cover||'',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};await store.put('projects',copy.id,copy);return json(copy,201);}
+        if(path[2]==='clone'&&method==='POST'){if(!canReadProject(old))fail(404,'作品不存在。');if(old.license==='All rights reserved')fail(403,'作者未开放克隆授权。');const copy={...old,likes:0,views:0,id:randomUUID(),title:`${old.title.slice(0,80)} · 我的分支`,authorId:user.id,status:'draft',sample:false,clonedFrom:old.id,cover:old.cover||'',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};await store.put('projects',copy.id,copy);return json(copy,201);}
         if(old&&old.authorId!==user.id&&user.role!=='owner')fail(403,'只能修改自己的作品。');
         if(method==='DELETE'){if(!old)fail(404,'作品不存在。');await store.remove('projects',old.id);return json({ok:true});}
         if(!['POST','PATCH'].includes(method))fail(405,'不支持的请求方法。');
-        const project={id:old?.id||randomUUID(),title:text(body.title,'作品名称',100,2),summary:text(body.summary,'简介',240,5),content:text(body.content,'项目介绍',30000,10),category:['ai','web','systems','creative'].includes(body.category)?body.category:'web',tags:Array.isArray(body.tags)?body.tags.slice(0,5).map(tag=>text(tag,'标签',20,1)):[],repo:safeURL(body.repo,'源码地址'),demo:safeURL(body.demo,'演示地址',{internal:true}),license:['MIT','Apache-2.0','GPL-3.0','All rights reserved'].includes(body.license)?body.license:'All rights reserved',art:['ai','terminal','universe'].includes(body.art)?body.art:'universe',cover:body.cover===undefined?old?.cover||'':coverCheck(body.cover),authorId:old?.authorId||user.id,status:body.status==='draft'?'draft':'published',sample:false,clonedFrom:old?.clonedFrom||null,createdAt:old?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
+        const project={views:old?.views||0,likes:old?.likes||0,id:old?.id||randomUUID(),title:text(body.title,'作品名称',100,2),summary:text(body.summary,'简介',240,5),content:text(body.content,'项目介绍',30000,10),category:['ai','web','systems','creative'].includes(body.category)?body.category:'web',tags:Array.isArray(body.tags)?body.tags.slice(0,5).map(tag=>text(tag,'标签',20,1)):[],repo:safeURL(body.repo,'源码地址'),demo:safeURL(body.demo,'演示地址',{internal:true}),license:['MIT','Apache-2.0','GPL-3.0','All rights reserved'].includes(body.license)?body.license:'All rights reserved',art:['ai','terminal','universe'].includes(body.art)?body.art:'universe',cover:body.cover===undefined?old?.cover||'':coverCheck(body.cover),authorId:old?.authorId||user.id,status:body.status==='draft'?'draft':'published',sample:false,clonedFrom:old?.clonedFrom||null,createdAt:old?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
         await store.put('projects',project.id,project);return json(await author(project),old?200:201);
       }
       if(path[0]==='comments') {
@@ -130,7 +133,98 @@ export function createAPI(store,env=process.env) {
         if(!['posts','projects'].includes(kind)||typeof id!=='string')fail(400,'评论目标无效。');
         const target=await store.get(kind,id);if(!target||(kind==='projects'&&!canReadProject(target)))fail(404,'内容不存在。');
         if(method==='GET')return json(await Promise.all((await store.list('comments',{kind,targetId:id})).sort((a,b)=>a.createdAt.localeCompare(b.createdAt)).map(author)));
-        if(method==='POST'){requireUser();const comment={id:randomUUID(),kind,targetId:id,authorId:user.id,content:text(body.content,'评论',2000,1),createdAt:new Date().toISOString()};await store.put('comments',comment.id,comment);return json(await author(comment),201);}
+        if(method==='POST'){requireUser();const comment={id:randomUUID(),kind,targetId:id,authorId:user.id,content:text(body.content,'评论',2000,1),createdAt:new Date().toISOString()};await store.put('comments',comment.id,comment);if(target.authorId&&target.authorId!==user.id)await notify(target.authorId,'comment',`评论了你的${kind==='posts'?'文章':'作品'}「${target.title.slice(0,30)}」：${comment.content.slice(0,40)}`,`/${kind==='posts'?'articles':'projects'}/${id}`);return json(await author(comment),201);}
+      }
+      if(path[0]==='likes') {
+        if(!['posts','projects'].includes(path[1])||!path[2])fail(400,'目标或状态无效。');
+        if(method==='GET'){const target=await store.get(path[1],path[2]);if(!target||(path[1]==='projects'&&!canReadProject(target)))fail(404,'内容不存在。');const mine=user?(await store.get('likes',`${path[1]}:${path[2]}:${user.id}`))!=null:false;return json({count:target.likes||0,liked:mine});}
+        if(method==='POST') {
+          requireUser();const kind=path[1],id=path[2];
+          if(!['posts','projects'].includes(kind))fail(400,'点赞目标无效。');
+          const target=await store.get(kind,id);if(!target||(kind==='projects'&&!canReadProject(target)))fail(404,'内容不存在。');
+          const result=await store.engage(kind,id,user.id);
+          if(result.liked&&target.authorId!==user.id)await notify(target.authorId,'like',`赞了你的${kind==='posts'?'文章':'作品'}「${target.title.slice(0,30)}」`,`/${kind==='posts'?'articles':'projects'}/${id}`);
+          return json({count:result.count,liked:result.liked});
+        }
+      }
+      if(path[0]==='views'&&path[1]&&method==='POST') {
+        const kind=path[1],id=path[2];
+        if(!['posts','projects'].includes(kind))fail(400,'目标无效。');
+        const target=await store.get(kind,id);if(!target||(kind==='projects'&&!canReadProject(target)))fail(404,'内容不存在。');
+        if(!await store.rate(`view:${digest(ip)}:${kind}:${id}`,1,1800))return json({views:target.views||0});const result=await store.engage(kind,id);return json({views:result.views});
+      }
+      if(path[0]==='search'&&method==='GET') {
+        const query=(url.searchParams.get('q')||'').trim().toLowerCase();if(!query)fail(400,'请输入搜索关键词。');
+        const kindFilter=url.searchParams.get('kind');
+        const sources=[];
+        if(kindFilter!=='projects')for(const post of await store.list('posts'))sources.push({type:'posts',label:'文章',item:post});
+        if(kindFilter!=='posts')for(const item of await store.list('projects',{status:'published'}))sources.push({type:'projects',label:'作品',item});
+        const results=sources.filter(({item})=>[item.title,item.summary,item.content,...(item.tags||[])].join(' ').toLowerCase().includes(query)).sort((a,b)=>b.item.createdAt.localeCompare(a.item.createdAt)).slice(0,30);
+        return json(await Promise.all(results.map(async ({item,type,label})=>({...await author(item),type,label}))));
+      }
+      if(path[0]==='archive'&&method==='GET') {
+        const groups=new Map();
+        for(const post of newest(await store.list('posts'))) {
+          const date=post.createdAt.slice(0,7);
+          if(!groups.has(date))groups.set(date,{month:date,posts:[]});
+          groups.get(date).posts.push({id:post.id,title:post.title,summary:post.summary,category:post.category,tags:post.tags,likes:post.likes||0,views:post.views||0,createdAt:post.createdAt});
+        }
+        return json({total:(await store.list('posts')).length,months:[...groups.values()]});
+      }
+      if(path[0]==='notifications') {
+        if(path[1]&&path[2]==='read'&&method==='POST'){requireUser();const item=await store.get('notifications',decodeURIComponent(path[1]));if(!item||item.userId!==user.id)fail(404,'通知不存在。');await store.put('notifications',item.id,{...item,read:true});return json({ok:true});}
+        if(path[1]==='read-all'&&method==='POST') {
+          requireUser();
+          for(const item of await store.list('notifications',{userId:user.id}))if(!item.read)await store.put('notifications',item.id,{...item,read:true});
+          return json({ok:true});
+        }
+        if(method==='GET') {
+          requireUser();
+          const all=newest(await store.list('notifications',{userId:user.id}));
+          return json({items:all.slice(0,50),unread:all.filter(item=>!item.read).length});
+        }
+      }
+      if(path[0]==='admin') {
+        if(path[1]==='content'&&path[2]==='projects'&&path[3]&&method==='PATCH'){
+          ownerOnly();if(body.status!=='draft')fail(400,'仅支持下架为私密草稿。');const item=await store.get('projects',path[3]);if(!item)fail(404,'作品不存在。');await store.put('projects',item.id,{...item,status:'draft',updatedAt:new Date().toISOString()});return json({ok:true});
+        }
+        if(path[1]==='content'&&method==='GET'){ownerOnly();return json(newest([...await store.list('posts'),...await store.list('projects')].map(item=>({...item,kind:item.status?'projects':'posts'}))));}
+        if(path[1]==='comments'&&method==='GET') {
+          ownerOnly();
+          const comments=newest(await store.list('comments')).slice(0,200);
+          return json(await Promise.all(comments.map(async comment=>{const targets={posts:'文章',projects:'作品'};const target=await store.get(comment.kind,comment.targetId);return {...await author(comment),targetTitle:target?.title||'（已删除的内容）',targetKind:targets[comment.kind]||comment.kind};})));
+        }
+        if(path[1]==='users'&&method==='GET') {
+          ownerOnly();
+          const users=[];for(const item of await store.list('users'))users.push({...publicUser(item),banned:!!item.banned,email:item.email});
+          return json(newest(users));
+        }
+        if(path[1]==='users'&&path[2]&&method==='PATCH') {
+          ownerOnly();const targetUser=await store.get('users',path[2]);if(!targetUser)fail(404,'用户不存在。');
+          if(targetUser.role==='owner')fail(403,'不能封禁站长账号。');
+          if(typeof body.banned!=='boolean')fail(400,'目标或状态无效。');const banned=body.banned;await store.put('users',targetUser.id,{...targetUser,banned});
+          if(banned)for(const s of await store.list('sessions',{userId:targetUser.id}))await store.remove('sessions',s.id);
+          return json({ok:true,banned});
+        }
+      }
+      if(path[0]==='share-image'&&method==='GET'){
+        const kind=path[1];if(!['posts','projects'].includes(kind))fail(404,'图片不存在。');
+        const item=await store.get(kind,path[2]);if(!item||(kind==='projects'&&item.status!=='published')||!item.cover)fail(404,'图片不存在。');
+        const match=item.cover.match(/^data:(image\/(?:png|jpeg|webp));base64,(.+)$/);if(!match)fail(404,'图片不存在。');
+        return new Response(Buffer.from(match[2],'base64'),{headers:{'Content-Type':match[1],'Cache-Control':'public, max-age=300','X-Content-Type-Options':'nosniff'}});
+      }
+      if(path[0]==='feed.xml'||path[0]==='sitemap.xml') {
+        const site=new URL(env.SITE_URL||url.origin).origin;
+        if(path[0]==='feed.xml') {
+          const escXML=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+          const posts=newest(await store.list('posts')).slice(0,30);
+          const items=posts.map(post=>`<item><title>${escXML(post.title)}</title><link>${site}/articles/${escXML(post.id)}</link><guid>${site}/articles/${escXML(post.id)}</guid><pubDate>${new Date(post.createdAt).toUTCString()}</pubDate><description>${escXML(post.summary)}</description></item>`).join('');
+          return new Response(`<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>Omale — 探索不设边界</title><link>${site}</link><description>计算机、AI、开源项目与好奇心。</description><language>zh-CN</language>${items}</channel></rss>`,{headers:{'Content-Type':'application/rss+xml; charset=utf-8','Cache-Control':'no-store'}});
+        }
+        const posts=await store.list('posts'),projects=(await store.list('projects',{status:'published'}));
+        const escXML=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        const urls=[`<url><loc>${site}/</loc></url>`,`<url><loc>${site}/articles</loc></url>`,`<url><loc>${site}/projects</loc></url>`,`<url><loc>${site}/about</loc></url>`,...posts.map(post=>`<url><loc>${site}/articles/${escXML(post.id)}</loc></url>`),...projects.map(item=>`<url><loc>${site}/projects/${escXML(item.id)}</loc></url>`),`<url><loc>${site}/archive</loc></url>`];
+        return new Response(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.join('')}</urlset>`,{headers:{'Content-Type':'application/xml; charset=utf-8','Cache-Control':'no-store'}});
       }
       if(path[0]==='conversations'&&method==='GET') {
         requireUser();const messages=[...await store.list('messages',{senderId:user.id}),...await store.list('messages',{recipientId:user.id})];const groups=new Map();
@@ -140,8 +234,8 @@ export function createAPI(store,env=process.env) {
       if(path[0]==='messages'&&path[1]) {
         requireUser();const peer=await store.get('users',path[1]);if(!peer)fail(404,'对方账号不存在。');if(peer.id===user.id)fail(400,'不能向自己发送私信。');
         if(method==='GET'){const sent=await store.list('messages',{senderId:user.id,recipientId:peer.id}),received=await store.list('messages',{senderId:peer.id,recipientId:user.id});const messages=[...sent,...received].sort((a,b)=>a.createdAt.localeCompare(b.createdAt));return json({peer:publicUser(peer),messages});}
-        if(method==='POST'&&path[2]==='read'){await store.put('reads',`${user.id}:${peer.id}`,{at:new Date().toISOString()});return json({ok:true});}
-        if(method==='POST'){const message={id:randomUUID(),senderId:user.id,recipientId:peer.id,content:text(body.content,'私信',4000,1),createdAt:new Date().toISOString()};await store.put('messages',message.id,message);return json(message,201);}
+        if(method==='POST'&&path[2]==='read'){await store.put('reads',`${user.id}:${peer.id}`,{at:new Date().toISOString()});const notificationId=`${user.id}:${digest('message'+`/messages/${peer.id}`)}`;const notification=await store.get('notifications',notificationId);if(notification)await store.put('notifications',notificationId,{...notification,read:true});return json({ok:true});}
+        if(method==='POST'){const message={id:randomUUID(),senderId:user.id,recipientId:peer.id,content:text(body.content,'私信',4000,1),createdAt:new Date().toISOString()};await store.put('messages',message.id,message);await notify(peer.id,'message','给你发来了一条私信',`/messages/${user.id}`);return json(message,201);}
       }
       fail(404,'接口不存在。');
     } catch(error) {

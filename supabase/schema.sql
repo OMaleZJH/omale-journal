@@ -29,3 +29,41 @@ end;
 $$;
 revoke execute on function public.omale_rate_limit(text,integer,integer) from public,anon,authenticated;
 grant execute on function public.omale_rate_limit(text,integer,integer) to service_role;
+
+-- 编辑内容不覆盖并发更新的统计；点赞和浏览在行锁内完成。
+create or replace function public.omale_save_content(content_kind text,content_id text,content_data jsonb)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare result jsonb;
+begin
+  if content_kind not in ('posts','projects') then raise exception 'Invalid content kind'; end if;
+  insert into omale_records(kind,id,data) values(content_kind,content_id,content_data)
+  on conflict(kind,id) do update set data=excluded.data || jsonb_build_object('likes',coalesce(omale_records.data->'likes','0'::jsonb),'views',coalesce(omale_records.data->'views','0'::jsonb)) returning data into result;
+  return result;
+end;
+$$;
+create or replace function public.omale_engage(content_kind text,content_id text,actor_id text default null)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare item jsonb; like_key text; is_liked boolean:=false; likes_count integer; views_count integer;
+begin
+  if content_kind not in ('posts','projects') then raise exception 'Invalid content kind'; end if;
+  select data into item from omale_records where kind=content_kind and id=content_id for update;
+  if item is null then raise exception 'Content not found'; end if;
+  likes_count:=coalesce((item->>'likes')::integer,0);views_count:=coalesce((item->>'views')::integer,0);
+  if actor_id is null then views_count:=views_count+1;
+  else
+    like_key:=content_kind||':'||content_id||':'||actor_id;
+    is_liked:=not exists(select 1 from omale_records where kind='likes' and id=like_key);
+    if is_liked then
+      insert into omale_records(kind,id,data) values('likes',like_key,jsonb_build_object('id',like_key,'kind',content_kind,'targetId',content_id,'userId',actor_id,'createdAt',now()));
+      likes_count:=likes_count+1;
+    else
+      delete from omale_records where kind='likes' and id=like_key;
+      likes_count:=greatest(0,likes_count-1);
+    end if;
+  end if;
+  update omale_records set data=item||jsonb_build_object('likes',likes_count,'views',views_count) where kind=content_kind and id=content_id;
+  return jsonb_build_object('count',likes_count,'views',views_count,'liked',is_liked);
+end;
+$$;
+revoke execute on function public.omale_save_content(text,text,jsonb),public.omale_engage(text,text,text) from public,anon,authenticated;
+grant execute on function public.omale_save_content(text,text,jsonb),public.omale_engage(text,text,text) to service_role;

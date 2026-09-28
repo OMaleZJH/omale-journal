@@ -4,7 +4,9 @@
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#090e0c">
   <meta name="description" content="Omale 的个人博客与作品集。一名大学生的计算机、AI 学习笔记，和永不停止的折腾。">
-  <meta property="og:title" content="Omale — 探索不设边界"><meta property="og:description" content="计算机、AI、开源项目与好奇心。"><meta property="og:type" content="website">
+  <meta property="og:title" content="Omale — 探索不设边界"><meta property="og:description" content="计算机、AI、开源项目与好奇心。"><meta property="og:type" content="website"><meta property="og:url" content="https://omale-173.netlify.app/"><meta name="twitter:card" content="summary"><meta name="twitter:title" content="Omale — 探索不设边界"><meta name="twitter:description" content="计算机、AI、开源项目与好奇心。">
+  <link rel="alternate" type="application/rss+xml" title="Omale 的博客 RSS" href="/feed.xml">
+  <link rel="sitemap" type="application/xml" href="/sitemap.xml">
   <title>Omale — 探索不设边界</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/app.css">
@@ -16,7 +18,7 @@
   <header class="header"><a class="wordmark" href="/" aria-label="Omale 首页">omale<span>®</span></a><nav aria-label="主导航"><a class="nav-link" href="/">首页<span>01</span></a><a class="nav-link" href="/articles">文章<span>02</span></a><a class="nav-link" href="/projects">作品集<span>03</span></a><a class="nav-link" href="/about">关于<span>04</span></a></nav><div class="header-actions"><button id="open-search" class="icon-button" aria-label="搜索文章和作品"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg></button><div id="session-nav"><a class="login-link" href="/login">登录 <span>↗</span></a></div></div></header>
   <div class="route-progress" aria-hidden="true"></div>
   <main id="app" tabindex="-1"><div class="initial-loading"><span class="loading-orbit"></span><p>正在进入 Omale 的宇宙</p></div></main>
-  <footer class="site-footer"><span>© <span id="year">2026</span> OMALE</span><span>BUILT WITH CURIOSITY <i>✳</i></span><span>EXPLORE. BUILD. REPEAT.</span></footer>
+  <footer class="site-footer"><span>© <span id="year">2026</span> OMALE</span><span>BUILT WITH CURIOSITY <i>✳</i></span><span class="footer-links"><a href="/search">搜索</a><a href="/archive">归档</a><a href="/feed.xml">RSS ↗</a></span></footer>
   <dialog id="search-dialog" class="search-dialog" aria-labelledby="search-title"><div class="dialog-top"><h2 id="search-title">寻找一点灵感</h2><button class="close-dialog" data-close="search-dialog" aria-label="关闭搜索">×</button></div><label class="search-field"><span>⌕</span><input id="search-input" type="search" placeholder="搜索文章、项目或关键词…" autocomplete="off" aria-label="搜索关键词"><kbd>ESC</kbd></label><div id="search-results" aria-live="polite"></div></dialog>
   <dialog id="confirm-dialog" class="confirm-dialog" aria-labelledby="confirm-title"><h2 id="confirm-title">确认删除？</h2><p>删除后无法恢复。确认继续吗？</p><div class="button-row"><button class="outline-button" data-close="confirm-dialog">取消</button><button class="danger-button" id="confirm-delete">确认删除</button></div></dialog>
   <div id="toast" role="status" aria-live="polite"></div>

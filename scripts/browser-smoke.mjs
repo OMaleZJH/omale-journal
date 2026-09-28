@@ -1,5 +1,5 @@
 import { pathToFileURL,fileURLToPath } from 'node:url';
-import { mkdir } from 'node:fs/promises';
+import { mkdir,readFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -7,13 +7,17 @@ const playwrightModule=process.env.PLAYWRIGHT_MODULE?pathToFileURL(process.env.P
 const {chromium}=await import(playwrightModule).then(module=>module.chromium?module:{chromium:module.default?.chromium||module});
 const root=fileURLToPath(new URL('../',import.meta.url));
 await mkdir(path.join(root,'artifacts'),{recursive:true});
-const port=5188,base=`http://127.0.0.1:${port}`,suffix=Date.now();
+const port=Number(process.env.QA_PORT||5188),base=`http://127.0.0.1:${port}`,suffix=Date.now();
 const server=spawn(process.execPath,['scripts/serve.mjs','--port',String(port)],{cwd:root,windowsHide:true,env:{...process.env,OMALE_DB:path.join(root,`artifacts/qa-${suffix}.sqlite`),OWNER_EMAIL:'qa-owner@qq.com',OWNER_PASSWORD:'QA-owner-password-123!'},stdio:['ignore','pipe','pipe']});
 let serverOutput='';server.stdout.on('data',chunk=>serverOutput+=chunk);server.stderr.on('data',chunk=>serverOutput+=chunk);
 for(let i=0;i<80;i++){try{if((await fetch(base+'/api/session')).ok)break;}catch{}await new Promise(resolve=>setTimeout(resolve,100));if(i===79)throw new Error('QA server did not start: '+serverOutput);}
-const browser=await chromium.launch({headless:true});
+const browser=await chromium.launch({headless:true,args:['--disable-gpu']});
+const card=await browser.newPage({viewport:{width:1200,height:630},deviceScaleFactor:1});
+await card.setContent(`<style>html,body{margin:0;width:1200px;height:630px;overflow:hidden}</style>${await readFile(path.join(root,'share-card.svg'),'utf8')}`);
+await card.screenshot({path:path.join(root,'share-card.png'),timeout:15000}).catch(async error=>{await browser.close();server.kill();throw error;});await card.close();
 const context=await browser.newContext({viewport:{width:1440,height:1000},deviceScaleFactor:1});
 const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
+await page.addInitScript(()=>{window.__entranceFrames=[];const animate=Element.prototype.animate;Element.prototype.animate=function(frames,options){if(this.closest('#app'))window.__entranceFrames.push({page:document.body.dataset.page,frames,duration:options?.duration,delay:options?.delay||0});return animate.call(this,frames,options);};});
 async function ready(key){await page.waitForFunction(key=>document.body.dataset.page===key&&!document.body.classList.contains('navigating'),key);await page.waitForTimeout(850);}
 async function go(url,key){await page.goto(base+url);await ready(key);}
 try{
@@ -70,6 +74,47 @@ try{
   await page.setViewportSize({width:390,height:844});await go('/','home');await page.waitForTimeout(2500);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);await page.screenshot({path:'artifacts/v2-mobile-home.png',fullPage:true});
   await page.getByRole('navigation').getByRole('link',{name:'作品集'}).click();await ready('projects');assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);await page.screenshot({path:'artifacts/v2-mobile-projects.png',fullPage:true});
   await go('/messages/omale','messages');assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);await page.screenshot({path:'artifacts/v2-mobile-messages.png',fullPage:true});
+  // ===== v2.1 新功能：通知/点赞/搜索页/归档/审核面板 =====
+  await go('/notifications','notifications');await page.waitForSelector('.notifications-page');assert.equal(await page.locator('.notification-item.unread').count(),0,'opening the conversation marks its message notification read');
+  await go('/articles','articles');await page.locator('.post-card a').first().click();await ready('articles');
+  await page.locator('.reading-meta .like-button').click();await page.waitForTimeout(700);
+  const likedText=await page.locator('.reading-meta .like-button').textContent();assert.match(likedText,/❤\s*1/,'like count should be 1 after click, got: '+likedText);
+  console.log('PASS: like button works on article detail');
+  const articleURL=page.url(),articleTitle=await page.locator('.reading-header h1').textContent();
+  const rawArticle=await (await page.request.get(articleURL)).text();assert.ok(rawArticle.includes(`<title>${articleTitle} — Omale</title>`));assert.match(rawArticle,/property="og:image"/);assert.match(rawArticle,/rel="canonical"/);
+  for(const path of ['/feed.xml','/sitemap.xml']){const response=await page.request.get(base+path);assert.equal(response.status(),200);const xml=await response.text();assert.ok(await page.evaluate(xml=>!new DOMParser().parseFromString(xml,'application/xml').querySelector('parsererror'),xml));}
+  const cardResponse=await page.request.get(base+'/share-card.png');assert.equal(cardResponse.status(),200);assert.equal(cardResponse.headers()['content-type'],'image/png');
+  await page.reload();await ready('articles');assert.equal(await page.locator('.like-button').getAttribute('aria-pressed'),'true');
+  await page.locator('.like-button').focus();await page.keyboard.press('Space');await page.waitForFunction(()=>document.querySelector('.like-button')?.getAttribute('aria-pressed')==='false');await page.keyboard.press('Enter');await page.waitForFunction(()=>document.querySelector('.like-button')?.getAttribute('aria-pressed')==='true');
+  console.log('PASS: server-rendered SEO, public RSS/sitemap, share image and keyboard likes');
+  await go('/search?q=AI','search');await page.waitForSelector('.search-result-row');assert.ok((await page.locator('.search-result-row').count())>=1);
+  await page.locator('#search-page-input').fill('不存在的内容xyz');await page.waitForTimeout(700);assert.ok((await page.locator('.search-page-results .empty-panel').count())===1);
+  console.log('PASS: search page finds content and shows empty state');
+  await page.locator('#search-page-input').fill(articleTitle);await page.waitForSelector('.search-result-row');await page.locator('.search-result-row').first().click();await ready('articles');assert.equal(await page.locator('.reading-header h1').textContent(),articleTitle);
+  await go('/archive','archive');await page.waitForSelector('.archive-month');assert.ok((await page.locator('.archive-item').count())>=2,'archive should list posts');
+  console.log('PASS: archive page groups posts by month');
+  await page.screenshot({path:'artifacts/v2-mobile-archive.png',fullPage:true});
+  const signatures=[];
+  for(const [path,key] of [['/about','about'],['/projects','projects'],['/search','search'],['/archive','archive'],['/notifications','notifications']]){await go(path,key);assert.equal(await page.locator('body').getAttribute('data-entrance'),key);const frames=await page.evaluate(()=>window.__entranceFrames[0]);assert.ok(frames&&frames.duration+frames.delay<=850);signatures.push(JSON.stringify(frames.frames));assert.equal(await page.locator('.entry-signature').count(),0);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);}
+  assert.equal(new Set(signatures).size,signatures.length,'pages use distinct entrance keyframes');
+  console.log('PASS: distinct fast entrances, effect cleanup and mobile layouts');
+  const ownerContext3=await browser.newContext({viewport:{width:1440,height:1000}});const ownerPage3=await ownerContext3.newPage();
+  await ownerPage3.goto(base+'/login');await ownerPage3.getByLabel('邮箱',{exact:true}).fill('qa-owner@qq.com');await ownerPage3.getByLabel('密码',{exact:true}).fill('QA-owner-password-123!');await ownerPage3.getByRole('button',{name:'登录我的空间'}).click();await ownerPage3.waitForSelector('.account-grid');
+  await ownerPage3.locator('.nav-bell').click();await ownerPage3.waitForSelector('.notification-item');
+  const notifText=await ownerPage3.locator('.notification-list').first().textContent();assert.ok(/赞了你的文章/.test(notifText),'owner should see the like notification');
+  await ownerPage3.locator('#read-all-notifications').click();await ownerPage3.waitForTimeout(900);assert.equal(await ownerPage3.locator('.notification-item.unread').count(),0);
+  assert.equal(await ownerPage3.locator('#notif-dot.show').count(),0,'red dot should disappear after read-all');
+  console.log('PASS: notifications page lists events and read-all clears the red dot');
+  await ownerPage3.locator('.nav-admin').click();await ownerPage3.waitForSelector('.admin-row');
+  await ownerPage3.waitForSelector('#admin-content .admin-row');await ownerPage3.screenshot({path:'artifacts/v2-admin.png',fullPage:true});
+  const sampleRow=ownerPage3.locator('#admin-content .admin-row').filter({hasText:'Paper Compass'});await sampleRow.locator('[data-admin-hide]').click();await ownerPage3.waitForFunction(()=>[...document.querySelectorAll('#admin-content .admin-row')].some(row=>row.textContent.includes('Paper Compass')&&row.textContent.includes('私密草稿')));assert.equal((await page.request.get(base+'/api/projects/paper-compass')).status(),404);
+  assert.ok((await ownerPage3.locator('#admin-comments .admin-row').count())>=1,'admin should see comments');
+  const banButton=ownerPage3.locator('[data-admin-ban]').first();assert.ok(await banButton.isVisible());await banButton.click();await ownerPage3.waitForTimeout(800);
+  assert.ok(await ownerPage3.locator('.banned-badge').first().isVisible(),'banned badge should appear');
+  await ownerPage3.locator('[data-admin-ban]').first().click();await ownerPage3.waitForTimeout(800);
+  await ownerContext3.close();
+  await go('/login','login');await page.getByLabel('邮箱',{exact:true}).fill('alice@qq.com');await page.getByLabel('密码',{exact:true}).fill('Member-password-123!');await page.getByRole('button',{name:'登录我的空间'}).click();await ready('account');
+  console.log('PASS: admin panel moderates comments and bans users');
   await page.emulateMedia({reducedMotion:'reduce'});await go('/','home');assert.equal(await page.locator('#universe').getAttribute('data-playing'),'true');
   await go('/account','account');await page.getByRole('button',{name:'退出登录'}).click();await ready('home');await go(ownProject,'projects');assert.equal(await page.locator('#comment-form').count(),0);
   assert.deepEqual(errors,[]);console.log('PASS: search, mobile layout, reduced-motion adaptation, logout, no browser errors');

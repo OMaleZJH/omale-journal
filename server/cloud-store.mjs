@@ -18,7 +18,8 @@ export function createCloudStore(env=process.env) {
   return {
     async get(kind,id) {const rows=await request(`omale_records?${query(kind,id)}&select=data`);return rows[0]?.data||null;},
     async list(kind,filters={}) {const params=new URLSearchParams({kind:`eq.${kind}`,select:'data',limit:'2000'});for(const [key,value]of Object.entries(filters))params.set(`data->>${key}`,`eq.${value}`);return (await request(`omale_records?${params}`)).map(row=>row.data);},
-    async put(kind,id,data,insert=false) {await request('omale_records',{method:'POST',headers:{Prefer:`${insert?'':'resolution=merge-duplicates,'}return=representation`},body:JSON.stringify({kind,id,data})});return data;},
+    async put(kind,id,data,insert=false) {if(!insert&&['posts','projects'].includes(kind))return request('rpc/omale_save_content',{method:'POST',body:JSON.stringify({content_kind:kind,content_id:id,content_data:data})});await request('omale_records',{method:'POST',headers:{Prefer:`${insert?'':'resolution=merge-duplicates,'}return=representation`},body:JSON.stringify({kind,id,data})});return data;},
+    async engage(kind,id,userId=null){return request('rpc/omale_engage',{method:'POST',body:JSON.stringify({content_kind:kind,content_id:id,actor_id:userId})});},
     async remove(kind,id) {await request(`omale_records?${query(kind,id)}`,{method:'DELETE'});},
     async rate(id,limit,seconds) {return request('rpc/omale_rate_limit',{method:'POST',body:JSON.stringify({rate_key:id,max_count:limit,window_seconds:seconds})});}
   };

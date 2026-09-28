@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /account
+Disallow: /messages
+Disallow: /notifications
+
+Sitemap: https://omale-173.netlify.app/sitemap.xml

@@ -4,6 +4,7 @@ import { createLocalStore } from '../server/local-store.mjs';
 import { createAPI } from '../server/api.mjs';
 import { seedDatabase } from '../server/seed.mjs';
 import { markdown } from '../client.js';
+import { renderPage } from '../server/seo.mjs';
 
 async function fixture(){
   const store=createLocalStore(':memory:');
@@ -88,6 +89,87 @@ test('GitHub OAuth state 一次性校验',async()=>{
     assert.equal(bad.status,200);assert.match(bad.body,typeof bad.body==='string'?/过期|缺少/:/error/);
   }finally{store.close();}
 });
+test('点赞防重、阅读量、通知、搜索归档和管理员审核',async()=>{
+  const {store,call,register}=await fixture();try{
+    const owner=await call('auth/login',{method:'POST',body:{email:'owner@qq.com',password:'Owner-test-password-123!'}});
+    const created=await call('posts',{method:'POST',cookie:owner.cookie,body:post});assert.equal(created.status,201);
+    const alice=await register();
+    assert.equal((await call(`likes/posts/${created.body.id}`,{method:'POST'})).status,401,'guests cannot like via API');
+    const first=await call(`likes/posts/${created.body.id}`,{method:'POST',cookie:alice.cookie});assert.equal(first.status,200);assert.equal(first.body.count,1);assert.equal(first.body.liked,true);
+    const again=await call(`likes/posts/${created.body.id}`,{method:'POST',cookie:alice.cookie});assert.equal(again.body.count,0);assert.equal(again.body.liked,false,'double like toggles off');
+    const third=await call(`likes/posts/${created.body.id}`,{method:'POST',cookie:alice.cookie});assert.equal(third.body.count,1);
+    const state=await call(`likes/posts/${created.body.id}`,{cookie:alice.cookie});assert.deepEqual(state.body,{count:1,liked:true});
+    assert.equal((await call(`likes/posts/${created.body.id}`)).body.count,1,'public can read like count');
+    assert.ok((await call(`views/posts/${created.body.id}`,{method:'POST',body:{}})).body.views>=1,'view counting works');
+    const notifications=await call('notifications',{cookie:owner.cookie});assert.ok(notifications.body.items.some(n=>n.type==='like'),'owner got a like notification');
+    assert.ok((await call('notifications/read-all',{method:'POST',cookie:owner.cookie})).body.ok);
+    assert.equal((await call('notifications',{cookie:owner.cookie})).body.unread,0);
+    await call('comments',{method:'POST',cookie:alice.cookie,body:{kind:'posts',targetId:created.body.id,content:'测试评论通知'}});
+    assert.ok((await call('notifications',{cookie:owner.cookie})).body.items.some(n=>n.type==='comment'),'owner got a comment notification');
+    const search=await call('search?q=测试文章');assert.equal(search.status,200);assert.ok(search.body.some(r=>r.type==='posts'));
+    assert.equal((await call('search?q=')).status,400);
+    const archive=await call('archive');assert.ok(archive.body.months.length>=1);assert.ok(archive.body.months[0].posts[0].title);
+    assert.equal((await call('admin/comments',{cookie:alice.cookie})).status,403,'members cannot access admin');
+    const adminComments=await call('admin/comments',{cookie:owner.cookie});assert.ok(adminComments.body.length>=1);
+    const bob=await register('bob@163.com','Bob');
+    const ban=await call(`admin/users/${bob.body.user.id}`,{method:'PATCH',cookie:owner.cookie,body:{banned:true}});assert.equal(ban.body.banned,true);
+    assert.equal((await call('profile',{method:'PATCH',cookie:bob.cookie,body:{name:'Bob'}})).status,401,'banned user sessions are revoked immediately');
+    assert.equal((await call(`admin/users/${bob.body.user.id}`,{method:'PATCH',cookie:owner.cookie,body:{banned:false}})).status,200);
+    assert.equal((await call(`admin/users/${owner.body.user.id}`,{method:'PATCH',cookie:owner.cookie,body:{banned:true}})).status,403,'cannot ban owner');
+    const feed=await call('feed.xml');assert.equal(feed.status,200);assert.match(String(feed.body),/<rss version="2.0"/);
+    const sitemap=await call('sitemap.xml');assert.equal(sitemap.status,200);assert.match(String(sitemap.body),/<urlset/);
+  }finally{store.close();}
+});
+test('并发统计、编辑保留、克隆清零和阅读去重',async()=>{
+  const {store,call,register}=await fixture();try{
+    const alice=await register(),bob=await register('bob@163.com','Bob');
+    const created=await call('projects',{method:'POST',cookie:alice.cookie,body:project});const id=created.body.id;
+    await Promise.all([
+      call(`likes/projects/${id}`,{method:'POST',cookie:alice.cookie}),
+      call(`likes/projects/${id}`,{method:'POST',cookie:bob.cookie}),
+      ...Array.from({length:12},(_,i)=>call(`views/projects/${id}`,{method:'POST',ip:`reader-${i}`}))
+    ]);
+    let saved=await call(`projects/${id}`);assert.equal(saved.body.likes,2);assert.equal(saved.body.views,12);
+    await call(`views/projects/${id}`,{method:'POST',ip:'reader-0'});
+    await call(`projects/${id}`,{method:'PATCH',cookie:alice.cookie,body:{...project,title:'更新标题',likes:999,views:999}});
+    saved=await call(`projects/${id}`);assert.equal(saved.body.likes,2);assert.equal(saved.body.views,12);
+    const clone=await call(`projects/${id}/clone`,{method:'POST',cookie:bob.cookie});assert.equal(clone.body.likes,0);assert.equal(clone.body.views,0);
+    assert.equal((await call(`likes/users/${alice.body.user.id}`)).status,400);
+    assert.equal((await call(`views/projects/${clone.body.id}`,{method:'POST'})).status,404);
+    assert.ok(!(await call('search?q='+encodeURIComponent('我的分支'))).body.some(item=>item.id===clone.body.id));
+  }finally{store.close();}
+});
+
+test('通知逐条已读与隔离、私信提醒和内容下架',async()=>{
+  const {store,call,register}=await fixture();try{
+    const owner=await call('auth/login',{method:'POST',body:{email:'owner@qq.com',password:'Owner-test-password-123!'}}),alice=await register(),bob=await register('bob@163.com','Bob');
+    await call(`messages/${alice.body.user.id}`,{method:'POST',cookie:bob.cookie,body:{content:'私信正文不应出现在提醒摘要'}});
+    const notice=(await call('notifications',{cookie:alice.cookie})).body.items[0];assert.equal(notice.type,'message');assert.ok(!notice.content.includes('正文'));
+    assert.equal((await call(`notifications/${encodeURIComponent(notice.id)}/read`,{method:'POST',cookie:bob.cookie})).status,404);
+    assert.equal((await call(`notifications/${encodeURIComponent(notice.id)}/read`,{method:'POST',cookie:alice.cookie})).status,200);
+    assert.equal((await call('notifications',{cookie:alice.cookie})).body.unread,0);
+    const created=await call('projects',{method:'POST',cookie:alice.cookie,body:project});
+    assert.equal((await call('admin/content',{cookie:alice.cookie})).status,403);
+    assert.ok((await call('admin/content',{cookie:owner.cookie})).body.some(item=>item.id===created.body.id));
+    assert.equal((await call(`admin/content/projects/${created.body.id}`,{method:'PATCH',cookie:alice.cookie,body:{status:'draft'}})).status,403);
+    await call(`admin/content/projects/${created.body.id}`,{method:'PATCH',cookie:owner.cookie,body:{status:'draft'}});
+    assert.equal((await call(`projects/${created.body.id}`)).status,404);
+    assert.equal((await call(`projects/${created.body.id}`,{cookie:alice.cookie})).status,200);
+  }finally{store.close();}
+});
+
+test('服务端分享卡、SEO 转义与草稿不泄露',async()=>{
+  const {store,call,register}=await fixture();try{
+    const alice=await register();const created=await call('projects',{method:'POST',cookie:alice.cookie,body:{...project,title:'标题 <script> & "分享"'}});
+    const template='<html><head><title>旧标题</title><meta property="og:title" content="旧标题"></head><body><div class="initial-loading">等待</div></body></html>';
+    const result=await renderPage(template,new URL(`http://localhost/projects/${created.body.id}`),store,{SITE_URL:'https://example.com'});
+    assert.equal(result.status,200);assert.match(result.html,/标题 &lt;script&gt; &amp; &quot;分享&quot;/);assert.ok(!result.html.includes('<script>'));assert.ok(result.html.includes(`https://example.com/projects/${created.body.id}`));assert.match(result.html,/summary_large_image/);assert.match(result.html,/https:\/\/example.com\/share-card.png/);
+    await call(`projects/${created.body.id}`,{method:'PATCH',cookie:alice.cookie,body:{...project,status:'draft'}});
+    const draft=await renderPage(template,new URL(`http://localhost/projects/${created.body.id}`),store);assert.equal(draft.status,404);assert.match(draft.html,/noindex/);assert.ok(!draft.html.includes(project.content));
+    const sitemap=await call('sitemap.xml');assert.ok(!sitemap.body.includes(created.body.id));
+  }finally{store.close();}
+});
+
 test('来源检查、持久限流、安全渲染和修改密码撤销旧会话',async()=>{
   const {store,call,register}=await fixture();try{
     assert.equal((await call('auth/register',{method:'POST',origin:'https://evil.example',body:{}})).status,403);

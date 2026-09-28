@@ -7,4 +7,4 @@ export default async (request,context)=>{
   try{ready??=init().catch(error=>{ready=null;throw error;});return (await ready)(request,{ip:context.ip||'unknown',secure:true});}
   catch(error){return Response.json({error:error.status===503?error.message:'云端服务初始化失败，请检查部署配置。'},{status:503,headers:{'Cache-Control':'no-store'}});}
 };
-export const config={path:'/api/*'};
+export const config={path:['/api/*','/feed.xml','/sitemap.xml']};
