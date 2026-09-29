@@ -10,4 +10,4 @@ export default async request=>{
     return new Response(result.html,{status:result.status,headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}});
   }catch{return new Response(await template,{status:503,headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Retry-After':'60'}});}
 };
-export const config={path:['/','/articles','/articles/*','/projects','/projects/*','/about','/archive','/authors/*','/search','/login','/register','/account','/messages','/messages/*','/notifications','/admin','/write/*']};
+export const config={path:['/articles','/articles/*','/projects','/projects/*','/about','/archive','/authors/*','/search','/login','/register','/account','/messages','/messages/*','/notifications','/admin','/write/*']};

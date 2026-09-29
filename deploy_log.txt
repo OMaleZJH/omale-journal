@@ -1,0 +1,202 @@
+[project.ts]: detectFrameworks
+[project.ts]: detectBuildSystem
+[project.ts]: detectWorkspaces
+[project.ts]: detectPackageManager
+[project.ts]: detectFrameworksInPath - undefined
+​
+> Initial build environment
+config: C:\Users\yq\Desktop\个人博客\netlify.toml
+context: dev
+cwd: C:\Users\yq\Desktop\个人博客
+featureFlags: []
+mode: cli
+repositoryRoot: C:\Users\yq\Desktop\个人博客
+siteId: 4af93c11-77a5-4725-ae64-93cd310be6d6
+​
+> UI build settings
+baseRelDir: false
+​
+> Resolved build environment
+branch: main
+buildDir: C:\Users\yq\Desktop\个人博客
+configPath: C:\Users\yq\Desktop\个人博客\netlify.toml
+context: dev
+env:
+  - NODE_VERSION
+  - GITHUB_CLIENT_ID
+  - GITHUB_CLIENT_SECRET
+  - OWNER_EMAIL
+  - OWNER_PASSWORD
+  - SUPABASE_SECRET_KEY
+  - SUPABASE_URL
+  - DEPLOY_ID
+  - BUILD_ID
+  - ACCOUNT_ID
+  - NETLIFY_LOCAL
+  - HEAD
+  - COMMIT_REF
+  - CACHED_COMMIT_REF
+  - PULL_REQUEST
+  - LANG
+  - LANGUAGE
+  - LC_ALL
+  - GATSBY_TELEMETRY_DISABLED
+  - NEXT_TELEMETRY_DISABLED
+​
+> Resolved config
+build:
+  command: npm run build
+  commandOrigin: config
+  environment:
+    - NODE_VERSION
+  publish: C:\Users\yq\Desktop\个人博客\dist
+  publishOrigin: config
+functions:
+  "*":
+    included_files:
+      - index.html
+    node_bundler: esbuild
+functionsDirectory: C:\Users\yq\Desktop\个人博客\netlify\functions
+headers:
+  - for: /*
+    values:
+      Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'
+        'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src
+        'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none';
+        form-action 'self'
+      Permissions-Policy: camera=(), microphone=(), geolocation=()
+      Referrer-Policy: strict-origin-when-cross-origin
+      X-Content-Type-Options: nosniff
+      X-Frame-Options: DENY
+headersOrigin: config
+redirects:
+  - from: /*
+    status: 200
+    to: /index.html
+redirectsOrigin: config
+ »   Warning: --build is now the default and can safely be omitted.
+[project.ts]: getBuildSettings
+[project.ts]: detectFrameworks
+[get-build-settings.ts] getBuildSettings for baseDirectory: 
+​
+Netlify Build                                                 
+────────────────────────────────────────────────────────────────
+​
+> Version
+  @netlify/build 35.15.0
+​
+> Flags
+  accountId: 68f197b73b52d678f8acb731
+  debug: true
+  deployId: 6abb759d51b02528e0c59f53
+  edgeFunctionsBootstrapURL: https://v2-17-1--edge.netlify.com/bootstrap/index-combined.ts
+  featureFlags:
+    - netlify_build_db_setup
+  mode: cli
+  siteId: 4af93c11-77a5-4725-ae64-93cd310be6d6
+  skewProtectionToken: de88c62ef17be80185494a575be30b1185c6f7f5af5f1acdd214646663d5b654366162623735396435316230323532386530633539663533
+​
+> Current directory
+  C:\Users\yq\Desktop\个人博客
+​
+> Config file
+  C:\Users\yq\Desktop\个人博客\netlify.toml
+​
+> Resolved config
+  build:
+    command: npm run build
+    commandOrigin: config
+    environment:
+      - NODE_VERSION
+    publish: C:\Users\yq\Desktop\个人博客\dist
+    publishOrigin: config
+  functions:
+    "*":
+      included_files:
+        - index.html
+      node_bundler: esbuild
+  functionsDirectory: C:\Users\yq\Desktop\个人博客\netlify\functions
+  headers:
+    - for: /*
+      values:
+        Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'
+          'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src
+          'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none';
+          form-action 'self'
+        Permissions-Policy: camera=(), microphone=(), geolocation=()
+        Referrer-Policy: strict-origin-when-cross-origin
+        X-Content-Type-Options: nosniff
+        X-Frame-Options: DENY
+  headersOrigin: config
+  redirects:
+    - from: /*
+      status: 200
+      to: /index.html
+  redirectsOrigin: config
+​
+> Context
+  production
+​
+build.command from netlify.toml                               
+────────────────────────────────────────────────────────────────
+​
+$ npm run build
+
+> omale-journal@2.0.0 build
+> node scripts/build.mjs
+
+Built 12 files → dist/
+​
+(build.command completed in 438ms)
+Build step duration: build.command completed in 438ms
+​
+Functions bundling                                            
+────────────────────────────────────────────────────────────────
+​
+Packaging Functions from netlify\functions directory:
+ - api.mjs
+ - page.mjs
+​
+{"msg":"Functions bundling completed","bundlers":["nft"],"bundlerCounts":{"nft":2},"fallbackCount":0,"warningsCount":0,"functions":[{"name":"api","runtime":"js","bundler":"nft","hadFallback":false,"hadWarnings":false},{"name":"page","runtime":"js","bundler":"nft","hadFallback":false,"hadWarnings":false}]}
+​
+(Functions bundling completed in 193ms)
+Build step duration: Functions bundling completed in 193ms
+
+Deploying to Netlify
+────────────────────────────────────────────────────────────────
+
+[32mDeploy path: [39m       C:\Users\yq\Desktop\个人博客\dist
+[32mFunctions path: [39m    C:\Users\yq\Desktop\个人博客\netlify\functions
+[32mConfiguration path: [39mC:\Users\yq\Desktop\个人博客\netlify.toml
+
+[33m⠋[39m Uploading blobs to deploy store...
+
+[32m√[39m Finished uploading blobs to deploy store
+[33m⠋[39m Hashing files...
+[33m⠋[39m Looking for a functions cache...
+[32m√[39m Deploying functions from cache (use --skip-functions-cache to override)
+[32m√[39m Finished hashing 13 files and 2 functions
+[33m⠋[39m CDN diffing files...
+[32m√[39m CDN requesting 1 files and 0 functions
+[33m⠋[39m Uploading 1 files
+[32m√[39m Finished uploading 1 assets
+[33m⠋[39m Waiting for deploy to go live...
+[32m√[39m Deploy is live!
+Build step duration: options.onPostBuild completed in 9028ms
+Build step duration: options.onEnd completed in 2ms
+​
+Netlify Build Complete                                        
+────────────────────────────────────────────────────────────────
+​
+(Netlify Build completed in 12.3s)
+Build step duration: Netlify Build completed in 12317ms
+
+🚀 Deploy complete
+────────────────────────────────────────────────────────────────
+
+Production URL: <https://omale-173.netlify.app>
+Unique deploy URL: <https://6abb759d51b02528e0c59f53--omale-173.netlify.app>
+
+Build logs: <https://app.netlify.com/projects/omale-173/deploys/6abb759d51b02528e0c59f53>
+Function logs: <https://app.netlify.com/projects/omale-173/logs/functions>
+Edge function logs: <https://app.netlify.com/projects/omale-173/logs/edge-functions>

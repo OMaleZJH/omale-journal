@@ -9,7 +9,7 @@ export async function api(path,options={}) {
 export function date(value){return new Date(value).toLocaleDateString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit'}).replaceAll('/','.');}
 export function time(value){return new Date(value).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});}
 export function avatar(user,size=''){return `<span class="avatar ${esc(user?.color||'mint')} ${size}">${user?.avatar?`<img src="${esc(user.avatar)}" alt="${esc(user.name)} 的头像">`:esc((user?.name||'?').slice(0,1).toUpperCase())}</span>`;}
-export const categoryNames={ai:'人工智能',code:'计算机',systems:'系统与折腾',creative:'创意编程',web:'Web 开发'};
+export const categoryNames={fullstack:'全栈开发',frontend:'前端工程',backend:'后端服务',system:'系统工具',ai:'算法与人工智能',data:'数据与数据库',security:'网络安全',mobile:'移动开发',desktop:'桌面应用',opensource:'开源项目',code:'计算机',systems:'系统工具',creative:'创意编程',web:'前端工程'};
 export function markdown(source='') {
   const blocks=[];let safe=esc(source).replace(/```([^\n]*)\n([\s\S]*?)```/g,(_,lang,code)=>{const id=blocks.length;blocks.push(`<pre><span class="code-language">${lang||'CODE'}</span><code>${code}</code></pre>`);return `\n@@BLOCK${id}@@\n`;});
   const inline=line=>line.replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');

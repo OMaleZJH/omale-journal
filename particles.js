@@ -32,11 +32,11 @@ export function createUniverse(canvas) {
         float arrive=clamp((uIntro-delay)/.58,0.,1.);
         float e=1.-pow(1.-arrive,3.);
         vec3 p=mix(aSphere,aGalaxy,uMorph);
-        float swirl=(1.-e)*1.9;
-        float spawn=2.9+seed*4.6;
+        float swirl=(1.-e)*3.4;
+        float spawn=4.4+seed*6.6;
         p+=vec3(cos(seed*40.+uTime*(.6+seed)+swirl*2.4),sin(seed*31.)*.6,sin(seed*47.-uTime*.4+swirl*2.1))*spawn*(1.-e);
         p.y+=sin(uTime*.3+seed*6.28)*.008;
-        p.xz=rotation(uTime*.095+uPointer.x*.25+(1.-uIntro)*2.1)*p.xz;
+        p.xz=rotation(uTime*.095+uPointer.x*.25+(1.-uIntro)*2.8)*p.xz;
         p.yz=rotation(.37+uMorph*.20+uPointer.y*.14)*p.yz;
         p.xy=rotation(-.28+sin(uTime*.08)*.035)*p.xy;
         float camera=3.6/(3.6-p.z*.4);
@@ -47,7 +47,7 @@ export function createUniverse(canvas) {
         color=mix(color,vec3(.48,.74,1.),uMorph*(.25+.25*sin(seed*19.)));
         float core=1.-smoothstep(0.,.42,length(aGalaxy.xz));
         color=mix(color,vec3(.90,1.,.85),core*uMorph*.85);
-        float alpha=(.37+depth*.68)*shimmer*(.22+.78*e);
+        float alpha=(.37+depth*.68)*shimmer*(.05+.95*e);
         if(kind>.5){
           alpha*=.82;
           if(p.z<0.&&length(p.xy)<.98)alpha*=mix(.08,1.,uMorph);
@@ -130,7 +130,7 @@ export function createUniverse(canvas) {
   let frame=0,last=0,time=0,intro=0,morph=0,targetMorph=0,burst=0,lastDraw=0;
   const pointer={x:0,y:0,tx:0,ty:0};const reduced=matchMedia('(prefers-reduced-motion: reduce)');
   function resize(){const bounds=canvas.getBoundingClientRect();width=bounds.width;height=bounds.height;dpr=Math.min(devicePixelRatio||1,mobile?1.5:2);canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);gl.viewport(0,0,canvas.width,canvas.height);const narrow=width<=760;radius=narrow?Math.min(width*.33,170):Math.min(width*.235,height*.37);cx=width*(narrow?.52:.745);cy=narrow?Math.max(650,Math.min(height*.74,800)):height*.505;draw();}
-  function draw(){if(lost||!width)return;gl.clear(gl.COLOR_BUFFER_BIT);gl.uniform2f(uniforms.uResolution,width,height);gl.uniform2f(uniforms.uCenter,cx,cy);gl.uniform2f(uniforms.uPointer,pointer.x,pointer.y);gl.uniform1f(uniforms.uRadius,radius);gl.uniform1f(uniforms.uTime,time);gl.uniform1f(uniforms.uMorph,morph);gl.uniform1f(uniforms.uIntro,Math.min(intro/(reduced.matches?.3:1.1),1));gl.uniform1f(uniforms.uBurst,burst);gl.uniform1f(uniforms.uDpr,dpr);gl.drawArrays(gl.POINTS,0,data.length/9);}
+  function draw(){if(lost||!width)return;gl.clear(gl.COLOR_BUFFER_BIT);gl.uniform2f(uniforms.uResolution,width,height);gl.uniform2f(uniforms.uCenter,cx,cy);gl.uniform2f(uniforms.uPointer,pointer.x,pointer.y);gl.uniform1f(uniforms.uRadius,radius);gl.uniform1f(uniforms.uTime,time);gl.uniform1f(uniforms.uMorph,morph);gl.uniform1f(uniforms.uIntro,Math.min(intro/3.8,1));gl.uniform1f(uniforms.uBurst,burst);gl.uniform1f(uniforms.uDpr,dpr);gl.drawArrays(gl.POINTS,0,data.length/9);}
   function tick(now){frame=0;if(paused||document.hidden||lost)return;const dt=last?Math.min((now-last)/1000,.06):1/60;last=now;time+=dt*(reduced.matches?.55:1);intro+=dt;burst*=Math.exp(-dt*2.1);morph+=(targetMorph-morph)*(1-Math.exp(-dt*2.3));pointer.x+=(pointer.tx-pointer.x)*(1-Math.exp(-dt*3));pointer.y+=(pointer.ty-pointer.y)*(1-Math.exp(-dt*3));if(active||now-lastDraw>60){draw();lastDraw=now;}frame=requestAnimationFrame(tick);}
   function start(){if(!frame&&!paused&&!document.hidden&&!lost){last=0;frame=requestAnimationFrame(tick);}}
   document.addEventListener('pointermove',e=>{pointer.tx=e.clientX/width-.5;pointer.ty=e.clientY/height-.5;},{passive:true});
@@ -147,9 +147,10 @@ function fallback(canvas){
   const ctx=canvas.getContext('2d');let paused=false,mode='sphere',active=true,frame=0,time=0,last=0;
   if(!ctx)return {count:0,paused:false,toggle(){return false;},setMode(){},setActive(){},replay(){}};
   const stars=Array.from({length:320},()=>({x:Math.random(),y:Math.random(),depth:.06+Math.random()*.3,seed:Math.random()}));
-  function tick(now){frame=0;if(paused||document.hidden)return;if(now-last>30){last=now;time+=.012;const reveal=Math.min(time/1.7,1);const w=canvas.clientWidth,h=canvas.clientHeight;canvas.width=w;canvas.height=h;const narrow=w<=760,cx=w*(narrow?.52:.74),cy=narrow?Math.max(650,h*.74):h*.51,r=(narrow?w*.32:Math.min(w*.23,h*.36))*(1+(1-reveal)*1.2);
+  function tick(now){frame=0;if(paused||document.hidden)return;if(now-last>30){last=now;time+=.012;const reveal=Math.min(time/5.8,1); // 聚合速度：约5.8秒完成（原1.7秒），与WebGL版同步放慢
+    const w=canvas.clientWidth,h=canvas.clientHeight;canvas.width=w;canvas.height=h;const narrow=w<=760,cx=w*(narrow?.52:.74),cy=narrow?Math.max(650,h*.74):h*.51,r=(narrow?w*.32:Math.min(w*.23,h*.36))*(1+(1-reveal)*1.2);
     for(const star of stars){const twinkle=.5+.5*Math.sin(time*(.4+star.seed*1.4)+star.seed*80);ctx.fillStyle=`rgba(210,235,220,${(.08+.3*twinkle)*(.35+star.depth*2.2)*(active?1:.5)})`;ctx.fillRect(star.x*w+Math.sin(time*.02)*8*star.depth,star.y*h,1.3,1.3);}
-    for(let i=0;i<1800;i++){if(i/1800>reveal)continue;const y=1-2*i/1800,q=Math.sqrt(1-y*y),a=i*2.39996+time;const x=mode==='sphere'?Math.cos(a)*q:Math.cos(a+i*.001)*(i/1100);const z=Math.sin(a)*q;const py=mode==='sphere'?y:Math.sin(a+i*.001)*(i/1300)*.4;ctx.fillStyle=`rgba(163,238,187,${(.35+z*.25)*(active?1:.5)*(.4+.6*reveal)})`;ctx.fillRect(cx+x*r,cy+(py-z*.2)*r,1.7,1.7);}}frame=requestAnimationFrame(tick);}
+    for(let i=0;i<1800;i++){const y=1-2*i/1800,q=Math.sqrt(1-y*y),a=i*2.39996+time;const seed=((i*2654435761)>>>0)/4294967296;const x=mode==='sphere'?Math.cos(a)*q:Math.cos(a+i*.001)*(i/1100);const z=Math.sin(a)*q;const py=mode==='sphere'?y:Math.sin(a+i*.001)*(i/1300)*.4;const e=1-Math.pow(1-reveal,3);const d=1+(1-e)*(1.6+seed*4.4);ctx.fillStyle=`rgba(163,238,187,${(.35+z*.25)*(active?1:.5)*(.05+.95*e)})`;ctx.fillRect(cx+x*r*d,cy+(py-z*.2)*r*d,1.7,1.7);}}frame=requestAnimationFrame(tick);}
   function start(){if(!frame&&!paused&&!document.hidden)frame=requestAnimationFrame(tick);}document.addEventListener('visibilitychange',()=>{if(document.hidden){cancelAnimationFrame(frame);frame=0;}else start();});start();canvas.dataset.renderer='canvas';canvas.dataset.playing='true';
   return {count:2120,get paused(){return paused;},toggle(){paused=!paused;canvas.dataset.playing=String(!paused);if(paused){cancelAnimationFrame(frame);frame=0;}else start();return paused;},setMode(v){mode=v;},setActive(v){active=v;},replay(){paused=false;time=0;canvas.dataset.playing='true';start();}};
 }

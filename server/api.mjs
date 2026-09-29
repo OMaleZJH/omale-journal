@@ -31,7 +31,7 @@ export function createAPI(store,env=process.env) {
       const ownerOnly=()=>{requireUser();if(user.role!=='owner')fail(403,'只有 Omale 可以发布和管理文章。');};
       const author=async item=>({...item,...(item.title?{liked:user?!!await store.get('likes',`${item.status?'projects':'posts'}:${item.id}:${user.id}`):false}:{}),author:publicUser(await store.get('users',item.authorId))});
       const canReadProject=item=>item&&(item.status==='published'||item.authorId===user?.id||user?.role==='owner');
-      async function login(account){const secret=token();await store.put('sessions',digest(secret),{id:digest(secret),userId:account.id,expires:Date.now()+1209600000});return json({user:{...publicUser(account),email:account.email}},200,{'Set-Cookie':cookie(secret)});}
+      async function login(account,asPage=false){const secret=token();await store.put('sessions',digest(secret),{id:digest(secret),userId:account.id,expires:Date.now()+1209600000});if(asPage)return new Response(null,{status:302,headers:{Location:'/account','Set-Cookie':cookie(secret),'Cache-Control':'no-store'}});return json({user:{...publicUser(account),email:account.email}},200,{'Set-Cookie':cookie(secret)});}
       if(path[0]==='session'&&method==='GET')return json({user:user?{...publicUser(user),email:user.email}:null});
       if(path[0]==='auth') {
         if(path[1]==='github') {
@@ -71,12 +71,12 @@ export function createAPI(store,env=process.env) {
             if(account&&account.banned)return toLogin('该账号已被封禁，无法登录。');
             if(account) {
               if(avatarData&&!account.avatar)await store.put('users',account.id,{...account,avatar:avatarData});
-              return login(account.avatar?account:{...account,avatar:avatarData});
+              return login(account.avatar?account:{...account,avatar:avatarData},true);
             }
             const name=text((ghUser.name||ghUser.login||'探险者').slice(0,30)||'探险者','昵称',30,2);
             account={id:randomUUID(),email,name,password:await hashPassword(token()),bio:(ghUser.bio||'').slice(0,240),avatar:avatarData,color:'blue',role:'member',createdAt:new Date().toISOString(),github:ghUser.login};
             try{await store.put('users',account.id,account,true);}catch{account={...account,id:`gh-${ghUser.id}`};try{await store.put('users',account.id,account,true);}catch{return toLogin('该邮箱已注册。');}}
-            return login(account);
+            return login(account,true);
           }
           fail(404,'接口不存在。');
         }
@@ -112,7 +112,7 @@ export function createAPI(store,env=process.env) {
         if(method==='DELETE'){if(!path[1])fail(400,'缺少文章标识。');await store.remove('posts',path[1]);return json({ok:true});}
         if(!['POST','PATCH'].includes(method))fail(405,'不支持的请求方法。');
         const old=path[1]?await store.get('posts',path[1]):null;if(path[1]&&!old)fail(404,'文章不存在。');
-        const post={views:old?.views||0,likes:old?.likes||0,id:old?.id||randomUUID(),title:text(body.title,'标题',100,2),summary:text(body.summary,'摘要',240,5),content:text(body.content,'正文',50000,10),category:['ai','code','systems'].includes(body.category)?body.category:'code',tags:Array.isArray(body.tags)?body.tags.slice(0,5).map(tag=>text(tag,'标签',20,1)):[],art:['ai','terminal','universe'].includes(body.art)?body.art:'universe',cover:body.cover===undefined?old?.cover||'':coverCheck(body.cover),authorId:user.id,sample:false,createdAt:old?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
+        const post={views:old?.views||0,likes:old?.likes||0,id:old?.id||randomUUID(),title:text(body.title,'标题',100,2),summary:text(body.summary,'摘要',240,5),content:text(body.content,'正文',50000,10),category:text(body.category,'分类',20,1),tags:Array.isArray(body.tags)?body.tags.slice(0,5).map(tag=>text(tag,'标签',20,1)):[],art:['ai','terminal','universe'].includes(body.art)?body.art:'universe',cover:body.cover===undefined?old?.cover||'':coverCheck(body.cover),authorId:user.id,sample:false,createdAt:old?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
         await store.put('posts',post.id,post);return json(await author(post),old?200:201);
       }
       if(path[0]==='projects') {
@@ -124,7 +124,7 @@ export function createAPI(store,env=process.env) {
         if(old&&old.authorId!==user.id&&user.role!=='owner')fail(403,'只能修改自己的作品。');
         if(method==='DELETE'){if(!old)fail(404,'作品不存在。');await store.remove('projects',old.id);return json({ok:true});}
         if(!['POST','PATCH'].includes(method))fail(405,'不支持的请求方法。');
-        const project={views:old?.views||0,likes:old?.likes||0,id:old?.id||randomUUID(),title:text(body.title,'作品名称',100,2),summary:text(body.summary,'简介',240,5),content:text(body.content,'项目介绍',30000,10),category:['ai','web','systems','creative'].includes(body.category)?body.category:'web',tags:Array.isArray(body.tags)?body.tags.slice(0,5).map(tag=>text(tag,'标签',20,1)):[],repo:safeURL(body.repo,'源码地址'),demo:safeURL(body.demo,'演示地址',{internal:true}),license:['MIT','Apache-2.0','GPL-3.0','All rights reserved'].includes(body.license)?body.license:'All rights reserved',art:['ai','terminal','universe'].includes(body.art)?body.art:'universe',cover:body.cover===undefined?old?.cover||'':coverCheck(body.cover),authorId:old?.authorId||user.id,status:body.status==='draft'?'draft':'published',sample:false,clonedFrom:old?.clonedFrom||null,createdAt:old?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
+        const project={views:old?.views||0,likes:old?.likes||0,id:old?.id||randomUUID(),title:text(body.title,'作品名称',100,2),summary:text(body.summary,'简介',240,5),content:text(body.content,'项目介绍',30000,10),category:text(body.category,'分类',20,1),tags:Array.isArray(body.tags)?body.tags.slice(0,5).map(tag=>text(tag,'标签',20,1)):[],repo:safeURL(body.repo,'源码地址'),demo:safeURL(body.demo,'演示地址',{internal:true}),license:['MIT','Apache-2.0','GPL-3.0','All rights reserved'].includes(body.license)?body.license:'All rights reserved',art:['ai','terminal','universe'].includes(body.art)?body.art:'universe',cover:body.cover===undefined?old?.cover||'':coverCheck(body.cover),authorId:old?.authorId||user.id,status:body.status==='draft'?'draft':'published',sample:false,clonedFrom:old?.clonedFrom||null,createdAt:old?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
         await store.put('projects',project.id,project);return json(await author(project),old?200:201);
       }
       if(path[0]==='comments') {
